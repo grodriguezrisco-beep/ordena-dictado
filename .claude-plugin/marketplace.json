@@ -1,0 +1,5 @@
+{
+  "name": "ordena-dictado",
+  "owner": { "name": "Gonzalo Rodríguez Risco" },
+  "plugins": [{ "name": "ordena-dictado", "source": "./" }]
+}

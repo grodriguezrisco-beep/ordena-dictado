@@ -1,0 +1,5 @@
+{
+  "name": "ordena-dictado",
+  "version": "0.1.0",
+  "description": "Ordena los dictados de Wispr Flow antes de que lleguen a Claude, y pregunta lo que no se entiende."
+}
