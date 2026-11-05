@@ -24,6 +24,8 @@ Reglas:
 Formato del pedido, en markdown, en primera persona como si lo escribiera quien dictó:
 **Qué quiero:** una o dos líneas.
 **Detalle:** bullets con cada cosa concreta, en orden de importancia.
+**Para qué:** una línea con el motivo, solo si lo dijo. No lo deduzcas: si no lo dijo, omite la sección.
+**Listo cuando:** bullets con cómo se sabe que está terminado, solo si lo dijo. Si no lo dijo, omite la sección.
 **Condiciones:** bullets con lo que debe o no debe pasar (omite la sección si no hay).
 **Lo que descarté:** bullets cortos con lo que dijo y luego retiró (omite si no hay).
 
@@ -32,8 +34,32 @@ Cada duda lleva una pregunta corta que termina en "?" y de 2 a 4 opciones de res
 Responde SOLO con un objeto JSON, sin texto antes ni después:
 {"pedido": "…", "dudas": [{"pregunta": "…?", "opciones": ["…", "…"]}]}`
 
-function prompt(texto: string): string {
-  return `${INSTRUCCION}\n\n<dictado>\n${texto}\n</dictado>`
+// Reglas propias de quien dicta (palabras que Wispr Flow confunde, cómo escribe).
+// Viven fuera del mod, en un archivo ORDENA_DICTADO.md que se busca como el
+// CLAUDE.md: en la carpeta de la sesión y en todas las de arriba. Si no hay
+// ninguno, se usa ~/.claude/ORDENA_DICTADO.md. Así el código es genérico y las
+// reglas viajan con la carpeta (por ejemplo, en Google Drive).
+const ARCHIVO_PROPIO = 'ORDENA_DICTADO.md'
+
+async function reglasPropias($: EngineInterface): Promise<string> {
+  try {
+    const halladas = await $.fs.ancestors({ names: [ARCHIVO_PROPIO] })
+    const textos = halladas.map(a => a.content.trim()).filter(t => t !== '')
+    if (textos.length > 0) return textos.join('\n\n')
+  } catch {}
+  try {
+    const raiz = $.plugin.root
+    const corte = raiz.indexOf('/.claude/')
+    if (corte < 0) return ''
+    return (await $.fs.read(`${raiz.slice(0, corte)}/.claude/${ARCHIVO_PROPIO}`)).trim()
+  } catch {
+    return ''
+  }
+}
+
+function prompt(texto: string, propias: string): string {
+  const extra = propias ? `\n\nReglas propias de quien dicta (pesan más que las de arriba):\n${propias}` : ''
+  return `${INSTRUCCION}${extra}\n\n<dictado>\n${texto}\n</dictado>`
 }
 
 function leerOrden(respuesta: string): Orden | undefined {
@@ -62,10 +88,11 @@ function leerOrden(respuesta: string): Orden | undefined {
 // Primero con el contexto de la conversación (sabe de qué proyecto se habla);
 // si la sesión aún no tiene nada que compartir, sin contexto.
 async function ordenar($: EngineInterface, texto: string): Promise<Orden | undefined> {
-  const conContexto = await $.model.fork({ prompt: prompt(texto) })
+  const pedido = prompt(texto, await reglasPropias($))
+  const conContexto = await $.model.fork({ prompt: pedido })
   if (conContexto.isAnswered) return leerOrden(conContexto.text)
 
-  const sinContexto = await $.model.complete({ model: 'sonnet', prompt: prompt(texto) })
+  const sinContexto = await $.model.complete({ model: 'sonnet', prompt: pedido })
   return sinContexto.isAnswered ? leerOrden(sinContexto.text) : undefined
 }
 
@@ -98,6 +125,8 @@ export const register: Register = on => {
     let orden: Orden | undefined
     try {
       orden = await ordenar($, texto)
+    } catch {
+      orden = undefined
     } finally {
       $.ui.status(undefined)
     }
