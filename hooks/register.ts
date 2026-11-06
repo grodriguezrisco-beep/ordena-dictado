@@ -113,13 +113,29 @@ async function preguntar($: EngineInterface, dudas: Duda[]): Promise<string[]> {
   return respuestas
 }
 
+// La app de escritorio mete avisos suyos dentro del texto del mensaje
+// (<system-reminder>Linked sessions now…</system-reminder>). No son de quien
+// dicta: no cuentan como dictado, no se ordenan y se devuelven tal cual.
+// Sin esto, una captura sola o un «Ya entré» pasaban las 20 palabras por el
+// aviso y el mod preguntaba si se volvía a dictar.
+const AVISO = /<system-reminder>[\s\S]*?<\/system-reminder>/g
+
+function separar(texto: string): { avisos: string[]; propio: string } {
+  return { avisos: texto.match(AVISO) ?? [], propio: texto.replace(AVISO, '').trim() }
+}
+
+function palabras(texto: string): number {
+  return texto === '' ? 0 : texto.split(/\s+/).length
+}
+
 export const register: Register = on => {
   on('prompt.submit', async ($, e, next) => {
     if (e.command || e.isMeta || !ORIGENES_PROPIOS.has(e.origin.kind)) return next(e)
 
-    const texto = e.text.trim()
-    if (texto.startsWith(CRUDO)) return next({ ...e, text: texto.slice(CRUDO.length).trim() })
-    if (texto.split(/\s+/).length < MIN_PALABRAS) return next(e)
+    const { avisos, propio: texto } = separar(e.text)
+    const conAvisos = (t: string) => [...avisos, t].filter(x => x !== '').join('\n\n')
+    if (texto.startsWith(CRUDO)) return next({ ...e, text: conAvisos(texto.slice(CRUDO.length).trim()) })
+    if (palabras(texto) < MIN_PALABRAS) return next(e)
 
     $.ui.status('Ordenando tu dictado…')
     let orden: Orden | undefined
@@ -147,6 +163,6 @@ export const register: Register = on => {
       'Si el texto ordenado contradice u omite algo de este original, manda el original: avísale de la diferencia.\n\n' +
       texto
 
-    return next({ ...e, text: ordenado, context: [...(e.context ?? []), original] })
+    return next({ ...e, text: conAvisos(ordenado), context: [...(e.context ?? []), original] })
   })
 }
